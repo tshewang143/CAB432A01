@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Transcoder App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="password"], input[type="file"], select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button.logout {
+            background-color: #f44336;
+        }
+        button.logout:hover {
+            background-color: #d32f2f;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .job {
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+        .job.queued {
+            border-left-color: #ff9800;
+        }
+        .job.processing {
+            border-left-color: #2196F3;
+        }
+        .job.failed {
+            border-left-color: #f44336;
+        }
+        .hidden {
+            display: none;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            border-radius: 4px 4px 0 0;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            color: #333;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #ccc;
+        }
+        .tabcontent {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+        }
+        .tabcontent.active {
+            display: block;
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            color: white;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        .notification.success {
+            background-color: #4CAF50;
+        }
+        .notification.error {
+            background-color: #f44336;
+        }
+        .notification.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="notification" class="notification hidden"></div>
+    
+    <div class="container">
+        <h1>Video Transcoder App</h1>
+        
+        <!-- Login Section -->
+        <div id="loginSection" class="section">
+            <h2>Login</h2>
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" value="user1">
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" value="pass1">
+            </div>
+            <button onclick="login()">Login</button>
+        </div>
+        
+        <!-- Main App Section (hidden until login) -->
+        <div id="appSection" class="hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Welcome, <span id="userName"></span></h2>
+                <button class="logout" onclick="logout()">Logout</button>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="tab">
+                <button class="tablinks active" onclick="openTab(event, 'UploadTab')">Upload Video</button>
+                <button class="tablinks" onclick="openTab(event, 'JobsTab')">My Jobs</button>
+            </div>
+            
+            <!-- Upload Tab -->
+            <div id="UploadTab" class="tabcontent active">
+                <h3>Upload Video</h3>
+                <div class="form-group">
+                    <label for="videoFile">Video File:</label>
+                    <input type="file" id="videoFile" accept="video/*">
+                </div>
+                <div class="form-group">
+                    <label for="title">Title (optional):</label>
+                    <input type="text" id="title" placeholder="Video title">
+                </div>
+                <div class="form-group">
+                    <label for="description">Description (optional):</label>
+                    <input type="text" id="description" placeholder="Video description">
+                </div>
+                <div class="form-group">
+                    <label for="format">Output Format:</label>
+                    <select id="format">
+                        <option value="mp4">MP4</option>
+                        <option value="webm">WebM</option>
+                        <option value="avi">AVI</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="resolution">Resolution:</label>
+                    <select id="resolution">
+                        <option value="480p">480p</option>
+                        <option value="720p" selected>720p</option>
+                        <option value="1080p">1080p</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="watermark">Watermark (optional):</label>
+                    <input type="text" id="watermark" placeholder="Path to watermark image">
+                </div>
+                <button onclick="uploadVideo()">Start Transcoding</button>
+            </div>
+            
+            <!-- Jobs Tab -->
+            <div id="JobsTab" class="tabcontent">
+                <h3>My Jobs</h3>
+                <div class="form-group">
+                    <label for="statusFilter">Filter by Status:</label>
+                    <select id="statusFilter" onchange="loadJobs()">
+                        <option value="">All</option>
+                        <option value="queued">Queued</option>
+                        <option value="processing">Processing</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sortBy">Sort By:</label>
+                    <select id="sortBy" onchange="loadJobs()">
+                        <option value="created_at">Created Date</option>
+                        <option value="original_filename">File Name</option>
+                        <option value="status">Status</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sortOrder">Sort Order:</label>
+                    <select id="sortOrder" onchange="loadJobs()">
+                        <option value="DESC">Descending</option>
+                        <option value="ASC">Ascending</option>
+                    </select>
+                </div>
+                <button onclick="loadJobs()">Refresh</button>
+                <div id="jobsList" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = null;
+        let currentUser = null;
+        
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+            
+            setTimeout(() => {
+                notification.className = 'notification hidden';
+            }, 3000);
+        }
+        
+        function openTab(evt, tabName) {
+            const tabcontent = document.getElementsByClassName("tabcontent");
+            for (let i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].classList.remove("active");
+            }
+            
+            const tablinks = document.getElementsByClassName("tablinks");
+            for (let i = 0; i < tablinks.length; i++) {
+                tablinks[i].classList.remove("active");
+            }
+            
+            document.getElementById(tabName).classList.add("active");
+            evt.currentTarget.classList.add("active");
+        }
+        
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                showNotification('Please enter both username and password', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    authToken = data.token;
+                    
+                    // Create user object from login data
+                    currentUser = {
+                        username: username,
+                        // Assign role based on username (you can modify this logic)
+                        role: username === 'admin' ? 'admin' : 'user'
+                    };
+                    
+                    // Save to localStorage
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    
+                    document.getElementById('loginSection').classList.add('hidden');
+                    document.getElementById('appSection').classList.remove('hidden');
+                    document.getElementById('userName').textContent = currentUser.username;
+                    
+                    showNotification('Login successful!');
+                    loadJobs();
+                } else {
+                    showNotification('Login failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showNotification('Login error: ' + error.message, 'error');
+            }
+        }
+        
+        function logout() {
+            authToken = null;
+            currentUser = null;
+            
+            // Remove from localStorage
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
+            
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('appSection').classList.add('hidden');
+            
+            showNotification('Logged out successfully');
+        }
+        
+        async function uploadVideo() {
+            const fileInput = document.getElementById('videoFile');
+            const title = document.getElementById('title').value;
+            const description = document.getElementById('description').value;
+            const format = document.getElementById('format').value;
+            const resolution = document.getElementById('resolution').value;
+            const watermark = document.getElementById('watermark').value;
+            
+            if (!fileInput.files.length) {
+                showNotification('Please select a video file', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('video', fileInput.files[0]);
+            formData.append('title', title);
+            formData.append('description', description);
+            formData.append('format', format);
+            formData.append('resolution', resolution);
+            formData.append('watermark', watermark);
+            
+            try {
+                const response = await fetch('/api/v1/jobs', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken
+                    },
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showNotification('Job created successfully: ' + data.message);
+                    fileInput.value = '';
+                    loadJobs();
+                } else {
+                    showNotification('Job creation failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showNotification('Upload error: ' + error.message, 'error');
+            }
+        }
+        
+        async function loadJobs() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
+            const sortOrder = document.getElementById('sortOrder').value;
+            
+            let url = '/api/v1/jobs?';
+            
+            if (statusFilter) {
+                url += `status=${statusFilter}&`;
+            }
+            
+            url += `sortBy=${sortBy}&sortOrder=${sortOrder}`;
+            
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayJobs(data.jobs, data.pagination);
+                } else {
+                    showNotification('Failed to load jobs: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showNotification('Jobs loading error: ' + error.message, 'error');
+            }
+        }
+        
+        function displayJobs(jobs, pagination) {
+            const jobsContainer = document.getElementById('jobsList');
+            
+            if (jobs.length === 0) {
+                jobsContainer.innerHTML = '<p>No jobs found</p>';
+                return;
+            }
+            
+            let html = '<div>';
+            
+            jobs.forEach(job => {
+                html += `
+                    <div class="job ${job.status}">
+                        <h4>${job.original_filename}</h4>
+                        <p>Status: <strong>${job.status}</strong></p>
+                        <p>Created: ${new Date(job.created_at).toLocaleString()}</p>
+                        ${job.completed_at ? `<p>Completed: ${new Date(job.completed_at).toLocaleString()}</p>` : ''}
+                        ${job.title ? `<p>Title: ${job.title}</p>` : ''}
+                        ${job.description ? `<p>Description: ${job.description}</p>` : ''}
+                        ${job.error_message ? `<p style="color: red;">Error: ${job.error_message}</p>` : ''}
+                    </div>
+                `;
+            });
+            
+            if (pagination && pagination.pages > 1) {
+                html += '<div style="margin-top: 20px; text-align: center;">';
+                
+                if (pagination.page > 1) {
+                    html += `<button onclick="changePage(${pagination.page - 1})">Previous</button>`;
+                }
+                
+                html += ` Page ${pagination.page} of ${pagination.pages} `;
+                
+                if (pagination.page < pagination.pages) {
+                    html += `<button onclick="changePage(${pagination.page + 1})">Next</button>`;
+                }
+                
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            jobsContainer.innerHTML = html;
+        }
+        
+        function changePage(page) {
+            // You would need to implement proper pagination in your UI
+            // For now, we'll just reload with the current filters
+            loadJobs();
+        }
+        
+        // Check if we're already logged in (e.g., page refresh)
+        function checkLoggedIn() {
+            const savedToken = localStorage.getItem('authToken');
+            const savedUser = localStorage.getItem('currentUser');
+            
+            if (savedToken && savedUser) {
+                authToken = savedToken;
+                currentUser = JSON.parse(savedUser);
+                
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('appSection').classList.remove('hidden');
+                document.getElementById('userName').textContent = currentUser.username;
+                
+                loadJobs();
+            }
+        }
+        
+        // Initialize the app
+        checkLoggedIn();
+    </script>
+</body>
+</html>
