@@ -1,61 +1,53 @@
-const express = require('express');
-const { initDatabase } = require('./config/database');
-const jobRoutes = require('./routes/jobs');
-const authRoutes = require('./routes/auth');
-const path = require('path');
+// index.js (CJS)
+require("./config/env"); // <<< load env FIRST, do not move this line
+
+const express = require("express");
+const path = require("path");
+
+// Routers
+const authRouter = require("./routes/auth");
+const jobsRouter = require("./routes/jobs");
+const auditRouter = require("./routes/audit"); // <<< NEW: audit routes (optional UI/demo)
+const streamRouter = require("./routes/stream");
+
+// RDS migration (create per-student audit table on boot)
+const { migrateAudit } = require("./config/rds"); // <<< NEW
 
 const app = express();
-
-console.log('Starting server setup...');
-
-// Initialize database
-try {
-  console.log('Initializing database...');
-  initDatabase();
-} catch (err) {
-  console.error('Database initialization failed:', err);
-  process.exit(1);
-}
-
-// Middleware
 app.use(express.json());
 
-// API routes
+// static frontend
+app.use(express.static(path.join(__dirname, "public")));
+
+// API routes (keep these mount points to match your frontend)
+app.use("/api/auth", authRouter);
+app.use("/api/v1/jobs", jobsRouter);
+app.use("/api/v1/audit", auditRouter); // <<< NEW route
+app.use("/api/v1/stream", streamRouter);
+
+//for debug
+//app.use("/api/debug/cache", require("./routes/cacheDebug"));
+
+// simple health
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// optional: run reconcile on boot (auto-heals stale PROCESSING jobs)
 try {
-  console.log('Registering auth routes at /api/auth from routes/auth.js');
-  app.use('/api/auth', authRoutes);
-  console.log('Registering job routes at /api/v1/jobs from routes/jobs.js');
-  app.use('/api/v1/jobs', jobRoutes);
-} catch (err) {
-  console.error('Error registering routes:', err);
-  process.exit(1);
+  const { reconcile } = require("./utils/reconcile");
+  reconcile().catch((e) => console.warn("[reconcile] error on boot:", e.message));
+} catch (e) {
+  // reconcile module is optional
 }
 
-// Static files
-console.log('Setting up static file serving for public/');
-try {
-  app.use(express.static(path.join(__dirname, 'public')));
-} catch (err) {
-  console.error('Error setting up static middleware:', err);
-  process.exit(1);
-}
+// Kick off RDS migration BEFORE starting server (non-blocking if it fails)
+(async () => {
+  try {
+    await migrateAudit();
+    console.log("[rds] audit table ready");
+  } catch (e) {
+    console.error("[rds] migrate error:", e.message);
+  }
+})();
 
-// Fallback for SPA (commented out to avoid path-to-regexp error)
-// console.log('Setting up SPA fallback for unmatched routes');
-// try {
-//   app.get('/(.*)', (req, res) => {
-//     console.log(`Serving index.html for unmatched route: ${req.originalUrl}`);
-//     res.sendFile(path.join(__dirname, 'public', 'index.html'));
-//   });
-// } catch (err) {
-//   console.error('Error setting up SPA fallback:', err);
-//   process.exit(1);
-// }
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err.stack);
-  res.status(500).json({ error: 'Internal server error', details: err.message });
-});
-
-app.listen(3000, () => console.log('Server running on port 3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on :${PORT}`));
