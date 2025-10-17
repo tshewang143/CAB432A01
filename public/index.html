@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Video Transcoder App</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    .container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); }
+    h1,h2 { color:#333; }
+    .form-group { margin-bottom: 15px; }
+    label { display:block; margin-bottom:5px; font-weight:700; }
+    input[type="text"], input[type="password"], input[type="file"], select {
+      width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;
+    }
+    button { background:#4CAF50; color:#fff; padding:10px 15px; border:none; border-radius:4px; cursor:pointer; margin-right:10px; }
+    button:hover { background:#45a049; }
+    button.logout { background:#f44336; }
+    button.logout:hover { background:#d32f2f; }
+    .section { margin-bottom:30px; padding-bottom:20px; border-bottom:1px solid #eee; }
+    .job { padding:10px; margin-bottom:10px; background:#f9f9f9; border-radius:4px; border-left:4px solid #4CAF50; }
+    .job.queued { border-left-color:#ff9800; }
+    .job.processing { border-left-color:#2196F3; }
+    .job.failed { border-left-color:#f44336; }
+    .hidden { display:none; }
+    .tabs { display:flex; gap:8px; margin-bottom:10px; }
+    .tabs button { background:#e9e9e9; color:#333; }
+    .tabs button.active { background:#ccc; }
+    .card { border:1px solid #eee; padding:16px; border-radius:6px; background:#fafafa; }
+    .notification { position: fixed; top: 20px; right: 20px; padding: 15px; border-radius: 4px; color: #fff; z-index: 1000; opacity: 0; transition: opacity .5s; }
+    .notification.success { background:#4CAF50; }
+    .notification.error { background:#f44336; }
+    .notification.show { opacity:1; }
+    pre.details { white-space:pre-wrap; background:#fff; border:1px solid #eee; padding:8px; border-radius:4px; margin:6px 0 0; }
+  </style>
+</head>
+<body>
+  <div id="notification" class="notification hidden"></div>
+
+  <div class="container">
+    <h1>Video Transcoder App</h1>
+
+    <!-- AUTH SECTION -->
+    <div id="authSection" class="section">
+      <h2>Authentication</h2>
+      <div class="tabs">
+        <button id="tabLogin"   class="active" onclick="switchAuthTab('login')">Login</button>
+        <button id="tabSignup"               onclick="switchAuthTab('signup')">Sign up</button>
+        <button id="tabConfirm"              onclick="switchAuthTab('confirm')">Confirm Email</button>
+      </div>
+
+      <!-- Login Card -->
+      <div id="cardLogin" class="card">
+        <div class="form-group">
+          <label for="loginUsername">Username</label>
+          <input id="loginUsername" type="text" value="client1" />
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" type="password" value="password" />
+        </div>
+        <button onclick="login()">Login</button>
+      </div>
+
+      <!-- Signup Card -->
+      <div id="cardSignup" class="card hidden">
+        <div class="form-group">
+          <label for="signupUsername">Username</label>
+          <input id="signupUsername" type="text" placeholder="e.g. matt" />
+        </div>
+        <div class="form-group">
+          <label for="signupEmail">Email</label>
+          <input id="signupEmail" type="text" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+          <label for="signupPassword">Password</label>
+          <input id="signupPassword" type="password" placeholder="Min 8 chars, upper/lower/number/symbol" />
+        </div>
+        <button onclick="signup()">Sign up</button>
+      </div>
+
+      <!-- Confirm Card -->
+      <div id="cardConfirm" class="card hidden">
+        <div class="form-group">
+          <label for="confirmUsername">Username</label>
+          <input id="confirmUsername" type="text" placeholder="same username as sign-up" />
+        </div>
+        <div class="form-group">
+          <label for="confirmCode">Confirmation Code</label>
+          <input id="confirmCode" type="text" placeholder="6-digit code from email" />
+        </div>
+        <button onclick="confirmSignup()">Confirm</button>
+      </div>
+    </div>
+
+    <!-- APP SECTION -->
+    <div id="appSection" class="hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Welcome, <span id="userName"></span></h2>
+        <button class="logout" onclick="logout()">Logout</button>
+      </div>
+
+      <div class="tabs">
+        <button id="tabUpload" class="active" onclick="switchAppTab('UploadTab')">Upload Video</button>
+        <button id="tabJobs"               onclick="switchAppTab('JobsTab')">My Jobs</button>
+        <button id="tabAudit"              onclick="switchAppTab('AuditTab')">Audit</button>
+      </div>
+
+      <!-- Upload -->
+      <div id="UploadTab" class="card">
+        <div class="form-group">
+          <label for="videoFile">Video File</label>
+          <input id="videoFile" type="file" accept="video/*" />
+        </div>
+        <div class="form-group">
+          <label for="title">Title (optional)</label>
+          <input id="title" type="text" placeholder="Video title" />
+        </div>
+        <div class="form-group">
+          <label for="description">Description (optional)</label>
+          <input id="description" type="text" placeholder="Video description" />
+        </div>
+        <div class="form-group">
+          <label for="format">Output Format</label>
+          <select id="format">
+            <option value="mp4">MP4</option>
+            <option value="webm">WebM</option>
+            <option value="avi">AVI</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="resolution">Resolution</label>
+          <select id="resolution">
+            <option value="480p">480p</option>
+            <option value="720p" selected>720p</option>
+            <option value="1080p">1080p</option>
+          </select>
+        </div>
+        <button onclick="uploadVideo()">Start Transcoding</button>
+      </div>
+
+      <!-- Jobs -->
+      <div id="JobsTab" class="card hidden">
+        <!-- (Optional) small toggle can be added into JobsTab header area -->
+<div style="margin-bottom:8px">
+  <label><input type="checkbox" id="liveToggle" onchange="toggleLive(this.checked)"> Live updates</label>
+</div>
+
+        <div class="form-group">
+          <label for="statusFilter">Filter by Status</label>
+          <select id="statusFilter" onchange="loadJobs()">
+            <option value="">All</option>
+            <option value="queued">Queued</option>
+            <option value="processing">Processing</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sortBy">Sort By</label>
+          <select id="sortBy" onchange="loadJobs()">
+            <option value="createdAt">Created Date</option>
+            <option value="rawKey">File Name</option>
+            <option value="status">Status</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sortOrder">Sort Order</label>
+          <select id="sortOrder" onchange="loadJobs()">
+            <option value="DESC">Descending</option>
+            <option value="ASC">Ascending</option>
+          </select>
+        </div>
+        <button onclick="loadJobs()">Refresh</button>
+        <div id="jobsList" style="margin-top:20px;"></div>
+      </div>
+
+      <!-- Audit -->
+      <div id="AuditTab" class="card hidden">
+        <div class="form-group" style="display:flex;gap:10px;align-items:center;">
+          <label for="auditFilter" style="margin:0;">Filter by action</label>
+          <select id="auditFilter" onchange="loadAudit()">
+            <option value="">All</option>
+            <option value="JOB_CREATED">JOB_CREATED</option>
+            <option value="JOB_PROCESSING">JOB_PROCESSING</option>
+            <option value="JOB_COMPLETED">JOB_COMPLETED</option>
+            <option value="JOB_FAILED">JOB_FAILED</option>
+            <option value="DOWNLOAD">DOWNLOAD</option>
+          </select>
+          <button onclick="loadAudit()">Refresh</button>
+        </div>
+        <div id="auditList" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  </div>
+
+ <script>
+  let authToken = null;   // stores Cognito IdToken (or legacy token)
+  let currentUser = null;
+  let pollHandle;
+
+  // --- SSE (graceful persistent connection) ---
+  let es = null;          // EventSource handle
+  let liveEnabled = false; // flip to true if you want SSE by default
+
+  function startLive() {
+    if (!authToken || es) return;
+    // EventSource auto-reconnects on server restarts/network blips
+    es = new EventSource(`/api/v1/stream/jobs?token=${encodeURIComponent(authToken)}`);
+
+    es.addEventListener("hello", (evt) => {
+      // connection established
+      // console.log("SSE hello:", evt.data);
+    });
+
+    es.addEventListener("heartbeat", () => {
+      // keep-alive from server
+    });
+
+    es.addEventListener("jobs", (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        const jobs = payload.jobs || [];
+        displayJobs(jobs, { page: 1, pages: 1 });
+        // while live updates are flowing, pause fallback polling
+        stopPolling();
+      } catch { /* ignore parse errors */ }
+    });
+
+    es.addEventListener("error", () => {
+      // transient errors are auto-retried; if stream actually dies, fall back
+    });
+
+    es.onerror = () => {
+      // If the stream truly dies, close it and resume polling
+      stopLive(true);
+      startPolling();
+    };
+  }
+
+  function stopLive(silent = false) {
+    if (es) {
+      try { es.close(); } catch {}
+      es = null;
+    }
+    if (!silent) {
+      // Optional: showNotification("Live updates stopped", "error");
+    }
+  }
+
+  function toggleLive(on) {
+    liveEnabled = !!on;
+    if (liveEnabled) {
+      startLive();
+    } else {
+      stopLive();
+      startPolling(); // resume polling when live is off
+    }
+  }
+
+  /* ---------- UI helpers ---------- */
+  function showNotification(message, type = 'success') {
+    const el = document.getElementById('notification');
+    el.textContent = message;
+    el.className = `notification ${type} show`;
+    setTimeout(() => (el.className = 'notification hidden'), 3000);
+  }
+
+  function switchAuthTab(which) {
+    const tabs = ['login','signup','confirm'];
+    tabs.forEach(t => {
+      document.getElementById('tab' + capitalize(t)).classList.toggle('active', t === which);
+      document.getElementById('card' + capitalize(t)).classList.toggle('hidden', t !== which);
+    });
+  }
+
+  // UPDATED to integrate SSE graceful handling
+  function switchAppTab(whichId) {
+    const ids = ['UploadTab','JobsTab','AuditTab'];
+    ids.forEach(id => {
+      document.getElementById(id).classList.toggle('hidden', id !== whichId);
+    });
+    document.getElementById('tabUpload').classList.toggle('active', whichId === 'UploadTab');
+    document.getElementById('tabJobs').classList.toggle('active', whichId === 'JobsTab');
+    document.getElementById('tabAudit').classList.toggle('active', whichId === 'AuditTab');
+
+    if (whichId === 'JobsTab') {
+      if (liveEnabled) {
+        startLive();
+      } else {
+        loadJobs();
+        startPolling();
+      }
+    } else {
+      // leaving Jobs tab—close SSE & stop polling to save resources
+      stopLive(true);
+      stopPolling();
+      if (whichId === 'AuditTab') loadAudit();
+    }
+  }
+
+  function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function fileNameFromRawKey(rawKey) {
+    if (!rawKey) return '';
+    const parts = rawKey.split('/');
+    return parts[parts.length - 1] || rawKey;
+  }
+  function human(dt) { try { return new Date(dt).toLocaleString(); } catch { return dt || ''; } }
+  function humanTs(ts) { return human(ts); }
+
+  /* ---------- Auth calls ---------- */
+  async function signup() {
+    const username = document.getElementById('signupUsername').value.trim();
+    const email = document.getElementById('signupEmail').value.trim();
+    const password = document.getElementById('signupPassword').value;
+
+    if (!username || !email || !password) {
+      return showNotification('Provide username, email, password', 'error');
+    }
+
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) return showNotification(data.error || 'Sign-up failed', 'error');
+
+      showNotification('Sign-up successful. Check your email for the code!');
+      document.getElementById('confirmUsername').value = username;
+      switchAuthTab('confirm');
+    } catch (e) {
+      showNotification(e.message, 'error');
+    }
+  }
+
+  async function confirmSignup() {
+    const username = document.getElementById('confirmUsername').value.trim();
+    const code = document.getElementById('confirmCode').value.trim();
+    if (!username || !code) return showNotification('Provide username and confirmation code', 'error');
+
+    try {
+      const res = await fetch('/api/auth/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, code })
+      });
+      const data = await res.json();
+      if (!res.ok) return showNotification(data.error || 'Confirm failed', 'error');
+
+      showNotification('Email confirmed. You can now login.');
+      document.getElementById('loginUsername').value = username;
+      switchAuthTab('login');
+    } catch (e) {
+      showNotification(e.message, 'error');
+    }
+  }
+
+  async function login() {
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!username || !password) return showNotification('Enter username and password', 'error');
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (!res.ok) return showNotification(data.error || 'Login failed', 'error');
+
+      authToken = data.idToken || data.token;
+      if (!authToken) return showNotification('No token returned by server', 'error');
+
+      currentUser = {
+        username: data.user?.username || username,
+        role: data.user?.role || (username === 'admin' ? 'admin' : 'user')
+      };
+      localStorage.setItem('authToken', authToken);
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+
+      document.getElementById('authSection').classList.add('hidden');
+      document.getElementById('appSection').classList.remove('hidden');
+      document.getElementById('userName').textContent = currentUser.username;
+
+      showNotification('Login successful!');
+      // Optionally enable live updates right after login:
+      // liveEnabled = true;
+      // startLive();
+
+      switchAppTab('UploadTab');
+      loadJobs();
+    } catch (e) {
+      showNotification(e.message, 'error');
+    }
+  }
+
+  function logout() {
+    authToken = null; currentUser = null;
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('currentUser');
+    document.getElementById('authSection').classList.remove('hidden');
+    document.getElementById('appSection').classList.add('hidden');
+    stopLive(true);
+    stopPolling();
+    showNotification('Logged out');
+  }
+
+  /* ---------- Upload via S3 presigned URLs ---------- */
+  async function uploadVideo() {
+    const fileInput = document.getElementById('videoFile');
+    if (!fileInput.files.length) return showNotification('Select a video file', 'error');
+
+    const file = fileInput.files[0];
+    const title = document.getElementById('title').value;
+    const description = document.getElementById('description').value;
+    const format = document.getElementById('format').value;
+    const resolution = document.getElementById('resolution').value;
+
+    try {
+      // 1) Request a presigned PUT URL from server
+      const presignRes = await fetch('/api/v1/jobs/presign-upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + authToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ filename: file.name, contentType: file.type })
+      });
+      const presignData = await presignRes.json();
+      if (!presignRes.ok) return showNotification(presignData.error || 'Presign failed', 'error');
+
+      // 2) Browser uploads the file directly to S3
+      const putRes = await fetch(presignData.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file
+      });
+      if (!putRes.ok) return showNotification('S3 upload failed', 'error');
+
+      // 3) Tell server to create the job & start transcoding
+      const startRes = await fetch('/api/v1/jobs/start', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + authToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          videoId: presignData.videoId,
+          rawKey: presignData.rawKey,
+          title, description, format, resolution
+        })
+      });
+      const startData = await startRes.json();
+      if (!startRes.ok) return showNotification(startData.error || 'Start job failed', 'error');
+
+      showNotification('Job created: ' + (startData.videoId || 'OK'));
+      fileInput.value = '';
+      switchAppTab('JobsTab');
+      // If live is enabled, SSE will push updates; else fall back to polling
+      if (!liveEnabled) startPolling();
+    } catch (e) {
+      showNotification(e.message, 'error');
+    }
+  }
+
+  /* ---------- Jobs / Listing ---------- */
+  async function handleDownload(videoId) {
+    try {
+      const res = await fetch(`/api/v1/jobs/${encodeURIComponent(videoId)}/download`, {
+        headers: { Authorization: 'Bearer ' + authToken }
+      });
+      const data = await res.json();
+      if (res.ok && data.url) window.open(data.url, '_blank');
+      else showNotification(data.error || 'Not ready', 'error');
+    } catch (e) {
+      showNotification(e.message, 'error');
+    }
+  }
+
+  function displayJobs(jobs, pagination) {
+    const wrap = document.getElementById('jobsList');
+    if (!jobs || jobs.length === 0) {
+      wrap.innerHTML = '<p>No jobs found</p>'; return;
+    }
+    let html = '<div>';
+    jobs.forEach(job => {
+      const filename = fileNameFromRawKey(job.rawKey);
+      const statusUpper = String(job.status || '').toUpperCase();
+      const statusClass = statusUpper.toLowerCase(); // queued/processing/completed/failed for CSS
+      html += `
+        <div class="job ${statusClass}">
+          <h4>${filename || '(untitled video)'} <small style="font-weight:normal;color:#666">[${job.videoId}]</small></h4>
+          <p>Status: <strong>${statusUpper}</strong></p>
+          <p>Created: ${human(job.createdAt)}</p>
+          ${job.completedAt ? `<p>Completed: ${human(job.completedAt)}</p>` : ''}
+          ${job.title ? `<p>Title: ${job.title}</p>` : ''}
+          ${job.description ? `<p>Description: ${job.description}</p>` : ''}
+          <p>Format: ${job.formatRequested || '-'}, Resolution: ${job.resolutionRequested || '-'}</p>
+          ${job.errorMessage ? `<p style="color:red">Error: ${job.errorMessage}</p>` : ''}
+          ${statusUpper === 'COMPLETED' ? `<button onclick="handleDownload('${job.videoId}')">Download</button>` : ''}
+        </div>`;
+    });
+    html += '</div>';
+    wrap.innerHTML = html;
+  }
+
+  async function loadJobs() {
+    const statusFilter = document.getElementById('statusFilter').value;
+    const sortBy = document.getElementById('sortBy').value;
+    const sortOrder = document.getElementById('sortOrder').value;
+
+    let url = '/api/v1/jobs?';
+    if (statusFilter) url += `status=${encodeURIComponent(statusFilter)}&`;
+    url += `sortBy=${encodeURIComponent(sortBy)}&sortOrder=${encodeURIComponent(sortOrder)}`;
+
+    try {
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + authToken } });
+      const data = await res.json();
+      if (!res.ok) return showNotification(data.error || 'Failed to load jobs', 'error');
+
+      const jobs = data.jobs || [];
+      displayJobs(jobs, data.pagination);
+      const hasActive = jobs.some(j => {
+        const s = String(j.status || '').toUpperCase();
+        return s === 'QUEUED' || s === 'PROCESSING';
+      });
+      if (!liveEnabled) { // if live updates are off, manage polling
+        if (hasActive) startPolling(); else stopPolling();
+      }
+    } catch (e) {
+      showNotification('Jobs loading error: ' + e.message, 'error');
+    }
+  }
+
+  function startPolling() { stopPolling(); pollHandle = setInterval(loadJobs, 5000); }
+  function stopPolling() { if (pollHandle) clearInterval(pollHandle); pollHandle = null; }
+
+  /* ---------- Audit ---------- */
+  function renderAudit(events) {
+    const wrap = document.getElementById('auditList');
+    if (!events || !events.length) {
+      wrap.innerHTML = '<p>No recent activity found.</p>';
+      return;
+    }
+    let html = '<div>';
+    events.forEach(e => {
+      const details = e.details ? `<pre class="details">${JSON.stringify(e.details, null, 2)}</pre>` : '';
+      html += `
+        <div class="job" style="border-left-color:#666;">
+          <div style="display:flex;justify-content:space-between;">
+            <strong>${e.action}</strong>
+            <span style="color:#666">${humanTs(e.ts || e.timestamp || e.createdAt)}</span>
+          </div>
+          <div style="margin-top:4px;color:#333">
+            ${e.videoId ? `VideoId: <code>${e.videoId}</code><br/>` : ''}
+            ${e.username ? `User: <code>${e.username}</code><br/>` : ''}
+          </div>
+          ${details}
+        </div>
+      `;
+    });
+    html += '</div>';
+    wrap.innerHTML = html;
+  }
+
+  async function loadAudit() {
+    if (!authToken) {
+      showNotification('Please login first', 'error');
+      return;
+    }
+    const action = document.getElementById('auditFilter')?.value || '';
+    const qs = action ? `?action=${encodeURIComponent(action)}` : '';
+    try {
+      const res = await fetch(`/api/v1/audit/me${qs}`, {
+        headers: { Authorization: 'Bearer ' + authToken }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showNotification(data.error || 'Failed to load audit events', 'error');
+        return;
+      }
+      renderAudit(data.events || []);
+    } catch (e) {
+      showNotification('Audit load error: ' + e.message, 'error');
+    }
+  }
+
+  /* ---------- Boot ---------- */
+  function checkLoggedIn() {
+    const savedToken = localStorage.getItem('authToken');
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedToken && savedUser) {
+      authToken = savedToken;
+      currentUser = JSON.parse(savedUser);
+      document.getElementById('authSection').classList.add('hidden');
+      document.getElementById('appSection').classList.remove('hidden');
+      document.getElementById('userName').textContent = currentUser.username;
+      // If you want to auto-enable live updates after reload:
+      // liveEnabled = true; startLive();
+      loadJobs();
+    }
+  }
+  checkLoggedIn();
+</script>
+
+</body>
+</html>
