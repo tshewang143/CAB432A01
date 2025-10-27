@@ -1,0 +1,94 @@
+require('dotenv').config({ path: __dirname + '/.env' });
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+
+// Routers
+const authRouter = require("./routes/auth");
+const authRouter = require("./routes/auth");
+const jobsRouter = require("./routes/jobs");
+const auditRouter = require("./routes/audit");
+const streamRouter = require("./routes/stream");
+
+// RDS migration
+const { migrateAudit } = require("./config/rds");
+
+const app = express();
+
+// Enable CORS for all routes
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://ec2-3-27-203-87.ap-southeast-2.compute.amazonaws.com:3000', 'http://ec2-3-27-203-87.ap-southeast-2.compute.amazonaws.com'],
+  credentials: true
+}));
+
+app.use(express.json());
+
+// static frontend
+app.use(express.static(path.join(__dirname, "public")));
+
+// API routes
+app.use("/api/auth", authRouter);
+app.use("/api/v1/jobs", jobsRouter);
+app.use("/api/v1/audit", auditRouter);
+app.use("/api/v1/stream", streamRouter);
+
+// health check
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// optional: run reconcile on boot
+try {
+  const { reconcile } = require("./utils/reconcile");
+  reconcile().catch((e) => console.warn("[reconcile] error on boot:", e.message));
+} catch (e) {
+  // reconcile module is optional
+}
+
+// Start server
+const PORT = process.env.PORT || 3000;
+
+(async () => {
+  try {
+    await migrateAudit();
+    console.log("[rds] audit table ready");
+  } catch (e) {
+    console.error("[rds] migrate error:", e.message);
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on :${PORT}`);
+    console.log(`Access via: http://localhost:${PORT} or http://ec2-3-27-203-87.ap-southeast-2.compute.amazonaws.com:${PORT}`);
+  });
+})();
+
+// Test authentication endpoint
+app.get("/api/test-auth", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "No authorization header" });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    res.json({ 
+      success: true, 
+      user: decoded,
+      message: "Authentication successful" 
+    });
+  } catch (error) {
+    res.status(401).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Debug endpoint to see received headers
+app.get("/api/debug-headers", (req, res) => {
+  res.json({
+    headers: req.headers,
+    authorization: req.headers.authorization,
+    receivedAt: new Date().toISOString()
+  });
+});
