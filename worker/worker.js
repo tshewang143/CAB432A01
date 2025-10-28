@@ -1,9 +1,12 @@
 // worker/worker.js
+"use strict";
+
 // No absolute .env path; rely on ECS task env (or a local .env if present)
 try { require("dotenv").config(); } catch {}
+console.log("[worker] SQS_QUEUE_URL present:", !!process.env.SQS_QUEUE_URL);
 
 const os = require("os");
-const { receiveOne, deleteMessage, extendVisibility } = require("../config/sqs");
+const { receiveOne, deleteMessage, extendVisibility, enqueueTo } = require("../config/sqs");
 const { transcodeS3ToS3 } = require("../config/transcoder");
 const { lockJob, completeJob } = require("../models/Job");
 const { headObject } = require("../utils/videoProcessor");
@@ -40,10 +43,9 @@ async function handleTranscode(body) {
   const got = await lockJob(videoId, WORKER_ID, VIS_SEC);
   if (!got) {
     console.warn(`[worker] LOCK_NOT_ACQUIRED for ${videoId}; leaving message for retry`);
-    // IMPORTANT: throw so caller DOES NOT delete the message
     const err = new Error("LOCK_NOT_ACQUIRED");
     err.code = "LOCK_NOT_ACQUIRED";
-    throw err;
+    throw err; // leave message for retry
   }
 
   await tryLog({
@@ -65,6 +67,16 @@ async function handleTranscode(body) {
       details: { outputKey }
     });
 
+    // Optional: fan out a NOTIFY event if configured
+    if (process.env.NOTIFY_QUEUE_URL) {
+      await enqueueTo(process.env.NOTIFY_QUEUE_URL, {
+        type: "NOTIFY",
+        videoId,
+        userId,
+        outputKey
+      });
+    }
+
     console.log(`[worker] Successfully processed ${videoId}`);
   } catch (e) {
     console.error(`[worker] Transcode failed for ${videoId}:`, e.message);
@@ -75,8 +87,7 @@ async function handleTranscode(body) {
       action: "JOB_FAILED",
       details: { error: e.message }
     });
-    // Re-throw so caller DOES NOT delete the message (let SQS retry / DLQ)
-    throw e;
+    throw e; // DO NOT delete message; let SQS retry / DLQ policy handle
   }
 }
 
@@ -91,18 +102,20 @@ async function processMessage(msg) {
     return;
   }
 
-  const type = body.type;
-  if (type !== "TRANSCODE") {
-    console.warn("[worker] Unknown message type; deleting:", type);
+  if (body.type !== "TRANSCODE") {
+    console.warn("[worker] Unknown message type; deleting:", body.type);
     await deleteMessage(receipt);
     return;
   }
 
   // Heartbeat: extend visibility during long ffmpeg runs
+  const beatEveryMs = 120_000;
   const hb = setInterval(() => {
-    extendVisibility(receipt, Math.max(300, VIS_SEC))
-      .catch(err => console.warn("[worker] heartbeat failed:", err.message));
-  }, 120_000);
+    const extendTo = Math.max(300, VIS_SEC); // keep at least 5m on the clock
+    extendVisibility(receipt, extendTo).catch(err =>
+      console.warn("[worker] heartbeat failed:", err.message)
+    );
+  }, beatEveryMs);
 
   try {
     console.log("[worker] messageId:", msg.MessageId, "videoId:", body.videoId);
@@ -111,7 +124,6 @@ async function processMessage(msg) {
     console.log("[worker] Message deleted:", msg.MessageId);
   } catch (e) {
     if (e && e.code === "LOCK_NOT_ACQUIRED") {
-      // Leave message for retry
       console.warn("[worker] Leaving message for retry due to lock");
     } else {
       console.error("[worker] Processing failed; will be retried:", e.message);
