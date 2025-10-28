@@ -1,11 +1,15 @@
-require('dotenv').config({ path: __dirname + '/.env' });
+# Backup your current index.js
+cp index.js index.js.backup
+
+# Create a modified version that uses the proxy
+cat > index.js << 'EOF'
+require("./config/env");
+
 const express = require("express");
-const cors = require("cors");
 const path = require("path");
 
 // Routers
-const authRouter = require("./routes/auth");
-const authRouter = require("./routes/auth");
+const authProxy = require("./routes/auth-proxy");  // Changed from authRouter
 const jobsRouter = require("./routes/jobs");
 const auditRouter = require("./routes/audit");
 const streamRouter = require("./routes/stream");
@@ -14,28 +18,38 @@ const streamRouter = require("./routes/stream");
 const { migrateAudit } = require("./config/rds");
 
 const app = express();
-
-// Enable CORS for all routes
-app.use(cors({
-  origin: ['http://localhost:3000', 'http://ec2-3-27-203-87.ap-southeast-2.compute.amazonaws.com:3000', 'http://ec2-3-27-203-87.ap-southeast-2.compute.amazonaws.com'],
-  credentials: true
-}));
-
 app.use(express.json());
 
 // static frontend
 app.use(express.static(path.join(__dirname, "public")));
 
-// API routes
-app.use("/api/auth", authRouter);
+// API routes - now using auth proxy to user service
+app.use("/api/auth", authProxy);  // Changed from authRouter
 app.use("/api/v1/jobs", jobsRouter);
 app.use("/api/v1/audit", auditRouter);
 app.use("/api/v1/stream", streamRouter);
 
-// health check
-app.get("/health", (_req, res) => res.json({ ok: true }));
+// Health check - enhanced to show microservices status
+app.get("/health", async (req, res) => {
+  const health = { 
+    ok: true, 
+    service: "main-web-service",
+    timestamp: new Date().toISOString()
+  };
+  
+  // Check if user service is healthy
+  try {
+    const axios = require('axios');
+    const userServiceHealth = await axios.get('http://localhost:3001/health');
+    health.userService = userServiceHealth.data;
+  } catch (error) {
+    health.userService = { status: "unreachable", error: error.message };
+  }
+  
+  res.json(health);
+});
 
-// optional: run reconcile on boot
+// Optional: run reconcile on boot
 try {
   const { reconcile } = require("./utils/reconcile");
   reconcile().catch((e) => console.warn("[reconcile] error on boot:", e.message));
@@ -43,9 +57,7 @@ try {
   // reconcile module is optional
 }
 
-// Start server
-const PORT = process.env.PORT || 3000;
-
+// Kick off RDS migration
 (async () => {
   try {
     await migrateAudit();
@@ -53,42 +65,11 @@ const PORT = process.env.PORT || 3000;
   } catch (e) {
     console.error("[rds] migrate error:", e.message);
   }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on :${PORT}`);
-    console.log(`Access via: http://localhost:${PORT} or http://ec2-3-27-203-87.ap-southeast-2.compute.amazonaws.com:${PORT}`);
-  });
 })();
 
-// Test authentication endpoint
-app.get("/api/test-auth", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "No authorization header" });
-  }
-  
-  const token = authHeader.replace('Bearer ', '');
-  try {
-    const jwt = require('jsonwebtoken');
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    res.json({ 
-      success: true, 
-      user: decoded,
-      message: "Authentication successful" 
-    });
-  } catch (error) {
-    res.status(401).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Main Web Service running on :${PORT}`);
+  console.log(`🔐 Authentication handled by User Service on port 3001`);
 });
-
-// Debug endpoint to see received headers
-app.get("/api/debug-headers", (req, res) => {
-  res.json({
-    headers: req.headers,
-    authorization: req.headers.authorization,
-    receivedAt: new Date().toISOString()
-  });
-});
+EOF
